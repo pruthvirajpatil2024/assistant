@@ -11,4 +11,4 @@ services:
       - key: GROQ_MODEL
         value: llama-3.3-70b-versatile
       - key: GROQ_STT_MODEL
-        value: whisper-large-v3-turbo
+        value: whisper-large-v3

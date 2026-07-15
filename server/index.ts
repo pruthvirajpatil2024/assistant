@@ -1,7 +1,8 @@
 import path from 'node:path'
+import { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
-import { getInterviewAnswer, transcribeAudio } from '../api/_groq'
+import { streamInterviewAnswer, transcribeAudio } from '../api/_groq'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const distDir = path.resolve(__dirname, '../dist')
@@ -16,8 +17,9 @@ app.post('/api/interview', async (req, res) => {
       res.status(400).json({ error: 'Missing question' })
       return
     }
-    const answer = await getInterviewAnswer(question)
-    res.json({ answer })
+    const stream = await streamInterviewAnswer(question)
+    res.setHeader('content-type', 'text/plain; charset=utf-8')
+    Readable.fromWeb(stream as import('node:stream/web').ReadableStream<Uint8Array>).pipe(res)
   } catch (err) {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
   }

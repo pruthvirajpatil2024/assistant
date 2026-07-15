@@ -1,4 +1,4 @@
-import { getInterviewAnswer } from "./_groq";
+import { streamInterviewAnswer } from "./_groq";
 
 export const config = { runtime: "edge" };
 
@@ -19,10 +19,10 @@ export default async function handler(req: Request): Promise<Response> {
       });
     }
 
-    const answer = await getInterviewAnswer(question);
-    return new Response(JSON.stringify({ answer }), {
+    const stream = await streamInterviewAnswer(question);
+    return new Response(stream, {
       status: 200,
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "text/plain; charset=utf-8" },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

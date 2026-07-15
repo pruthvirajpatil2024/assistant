@@ -1,3 +1,4 @@
+import { Readable } from 'node:stream'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
@@ -26,11 +27,11 @@ function apiDevMiddleware(env: Record<string, string>): Plugin {
           for await (const chunk of req) chunks.push(chunk as Buffer)
           const body = JSON.parse(Buffer.concat(chunks).toString('utf-8') || '{}')
 
-          const { getInterviewAnswer } = await server.ssrLoadModule('/api/_groq.ts')
-          const answer = await getInterviewAnswer(body.question)
+          const { streamInterviewAnswer } = await server.ssrLoadModule('/api/_groq.ts')
+          const stream = await streamInterviewAnswer(body.question)
 
-          res.setHeader('content-type', 'application/json')
-          res.end(JSON.stringify({ answer }))
+          res.setHeader('content-type', 'text/plain; charset=utf-8')
+          Readable.fromWeb(stream).pipe(res)
         } catch (err) {
           res.statusCode = 500
           res.setHeader('content-type', 'application/json')

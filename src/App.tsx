@@ -93,18 +93,37 @@ function App() {
 
     setQuestion(finalTranscript)
     setPhase('processing')
+    let streamed = ''
     try {
       const res = await fetch('/api/interview', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ question: finalTranscript }),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Request failed')
-      setAnswer(data.answer)
-      setPhase('answered')
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error || 'Request failed')
+      }
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let revealed = false
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        streamed += decoder.decode(value, { stream: true })
+        if (!revealed) {
+          setPhase('answered') // switch from "Thinking…" to the answer as it streams in
+          revealed = true
+        }
+        setAnswer(streamed)
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.')
+      // If we'd already started streaming an answer, keep showing what
+      // arrived rather than replacing it with an error message.
+      if (!streamed) {
+        setError(err instanceof Error ? err.message : 'Something went wrong.')
+      }
       setPhase('answered')
     }
   }, [stop, audioRecorder])
