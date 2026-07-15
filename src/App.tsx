@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useFullscreen } from './hooks/useFullscreen'
 import { useOrientation } from './hooks/useOrientation'
@@ -12,6 +12,15 @@ import { AnswerDisplay } from './components/AnswerDisplay'
 import './App.css'
 
 type Phase = 'idle' | 'recording' | 'transcribing' | 'processing' | 'answered'
+
+// Requesting a second concurrent getUserMedia() stream for the audio
+// recorder at the exact moment SpeechRecognition.start() also claims the
+// mic causes hardware contention on Android — recognition ends up waiting
+// behind it, which was the 1-2s delay before live captions appeared.
+// Giving recognition an uncontested head start on the mic before the
+// recorder opens its own stream fixes that; a few hundred ms of lead time
+// is well within normal human reaction time before speaking anyway.
+const AUDIO_RECORDER_START_DELAY_MS = 200
 
 async function transcribeWithWhisper(blob: Blob): Promise<string | null> {
   try {
@@ -42,24 +51,33 @@ function App() {
   const [answer, setAnswer] = useState('')
   const [error, setError] = useState('')
   const [sessionId, setSessionId] = useState(0)
+  const audioStartTimeoutRef = useRef<number | undefined>(undefined)
 
-  const beginRecording = useCallback(async () => {
+  const beginRecording = useCallback(() => {
     setQuestion('')
     setAnswer('')
     setError('')
     setSessionId((id) => id + 1)
     setPhase('recording')
     start()
-    try {
-      await audioRecorder.start()
-    } catch {
-      // Mic recording unavailable (permissions/unsupported) — live captions
-      // still work, and finishRecording() falls back to that transcript.
-    }
+    audioStartTimeoutRef.current = window.setTimeout(() => {
+      audioStartTimeoutRef.current = undefined
+      audioRecorder.start().catch(() => {
+        // Mic recording unavailable (permissions/unsupported) — live
+        // captions still work, and finishRecording() falls back to that.
+      })
+    }, AUDIO_RECORDER_START_DELAY_MS)
   }, [start, audioRecorder])
 
   const finishRecording = useCallback(async () => {
     setPhase('transcribing')
+    // If STOP was pressed inside the startup delay, cancel the deferred
+    // getUserMedia() call outright rather than let it open the mic after
+    // the user already ended the recording.
+    if (audioStartTimeoutRef.current !== undefined) {
+      window.clearTimeout(audioStartTimeoutRef.current)
+      audioStartTimeoutRef.current = undefined
+    }
     const [liveTranscript, audioBlob] = await Promise.all([stop(), audioRecorder.stop()])
 
     let finalTranscript = liveTranscript.trim()
