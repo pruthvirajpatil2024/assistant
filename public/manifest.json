@@ -1,0 +1,10 @@
+{
+  "name": "Interview Assistant",
+  "short_name": "Interview",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "start_url": "/",
+  "background_color": "#05050a",
+  "theme_color": "#05050a",
+  "icons": []
+}

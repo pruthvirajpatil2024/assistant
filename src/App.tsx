@@ -13,7 +13,7 @@ import './App.css'
 type Phase = 'idle' | 'recording' | 'processing' | 'answered'
 
 function App() {
-  useFullscreen()
+  const requestFullscreen = useFullscreen()
   const orientation = useOrientation()
   const isMobile = useIsMobile()
   const { transcript, isSupported, start, stop } = useSpeechRecognition()
@@ -58,12 +58,13 @@ function App() {
   }, [stop])
 
   const handlePress = useCallback(() => {
+    requestFullscreen()
     if (phase === 'idle' || phase === 'answered') {
       beginRecording()
     } else if (phase === 'recording') {
       finishRecording()
     }
-  }, [phase, beginRecording, finishRecording])
+  }, [phase, beginRecording, finishRecording, requestFullscreen])
 
   if (!isMobile) return <RotatePrompt reason="device" />
   if (orientation === 'portrait') return <RotatePrompt reason="orientation" />

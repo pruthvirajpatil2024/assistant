@@ -1,19 +1,30 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect } from 'react'
 
-function requestFullscreen() {
-  const el = document.documentElement as HTMLElement & {
-    webkitRequestFullscreen?: () => Promise<void> | void
-  }
-  if (document.fullscreenElement) return
-  const request = el.requestFullscreen ?? el.webkitRequestFullscreen
-  request?.call(el)?.catch?.(() => {
-    // Ignore — most mobile browsers require a user gesture; the
-    // touchend/click fallback below covers that case.
-  })
+type FullscreenElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void
 }
 
-/** Requests fullscreen on load, and again on first touch/click since most
- * mobile browsers block programmatic fullscreen without a user gesture. */
+function requestFullscreen() {
+  if (document.fullscreenElement) return
+  const el = document.documentElement as FullscreenElement
+  const request = el.requestFullscreen ?? el.webkitRequestFullscreen
+  try {
+    const result = request?.call(el)
+    if (result && typeof (result as Promise<void>).catch === 'function') {
+      ;(result as Promise<void>).catch(() => {
+        // Most mobile browsers reject this without a direct user gesture —
+        // the button-press call site is the reliable path.
+      })
+    }
+  } catch {
+    // Some browsers throw synchronously instead of rejecting.
+  }
+}
+
+/** Requests fullscreen on load (best-effort — usually blocked without a
+ * gesture) and on the first touch/click anywhere as a fallback. Also
+ * returns a `request` function to call directly from a button press,
+ * which is the path mobile browsers actually honor. */
 export function useFullscreen() {
   useEffect(() => {
     requestFullscreen()
@@ -27,4 +38,6 @@ export function useFullscreen() {
       document.removeEventListener('click', onFirstInteraction)
     }
   }, [])
+
+  return useCallback(() => requestFullscreen(), [])
 }
