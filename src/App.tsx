@@ -4,19 +4,38 @@ import { useFullscreen } from './hooks/useFullscreen'
 import { useOrientation } from './hooks/useOrientation'
 import { useIsMobile } from './hooks/useIsMobile'
 import { useSpeechRecognition } from './hooks/useSpeechRecognition'
+import { useAudioRecorder } from './hooks/useAudioRecorder'
 import { RotatePrompt } from './components/RotatePrompt'
 import { RecordButton, type ButtonState } from './components/RecordButton'
 import { QuestionArea } from './components/QuestionArea'
 import { AnswerDisplay } from './components/AnswerDisplay'
 import './App.css'
 
-type Phase = 'idle' | 'recording' | 'processing' | 'answered'
+type Phase = 'idle' | 'recording' | 'transcribing' | 'processing' | 'answered'
+
+async function transcribeWithWhisper(blob: Blob): Promise<string | null> {
+  try {
+    const res = await fetch('/api/transcribe', {
+      method: 'POST',
+      headers: { 'content-type': blob.type || 'audio/webm' },
+      body: blob,
+    })
+    const data = await res.json()
+    if (res.ok && typeof data.text === 'string' && data.text.trim()) {
+      return data.text.trim()
+    }
+  } catch {
+    // Network/server error transcribing — caller falls back to live captions.
+  }
+  return null
+}
 
 function App() {
   const requestFullscreen = useFullscreen()
   const orientation = useOrientation()
   const isMobile = useIsMobile()
   const { transcript, isSupported, start, stop } = useSpeechRecognition()
+  const audioRecorder = useAudioRecorder()
 
   const [phase, setPhase] = useState<Phase>('idle')
   const [question, setQuestion] = useState('')
@@ -24,21 +43,36 @@ function App() {
   const [error, setError] = useState('')
   const [sessionId, setSessionId] = useState(0)
 
-  const beginRecording = useCallback(() => {
+  const beginRecording = useCallback(async () => {
     setQuestion('')
     setAnswer('')
     setError('')
     setSessionId((id) => id + 1)
     setPhase('recording')
     start()
-  }, [start])
+    try {
+      await audioRecorder.start()
+    } catch {
+      // Mic recording unavailable (permissions/unsupported) — live captions
+      // still work, and finishRecording() falls back to that transcript.
+    }
+  }, [start, audioRecorder])
 
   const finishRecording = useCallback(async () => {
-    const finalTranscript = await stop()
+    setPhase('transcribing')
+    const [liveTranscript, audioBlob] = await Promise.all([stop(), audioRecorder.stop()])
+
+    let finalTranscript = liveTranscript.trim()
+    if (audioBlob && audioBlob.size > 0) {
+      const whisperText = await transcribeWithWhisper(audioBlob)
+      if (whisperText) finalTranscript = whisperText
+    }
+
     if (!finalTranscript) {
       setPhase('idle')
       return
     }
+
     setQuestion(finalTranscript)
     setPhase('processing')
     try {
@@ -55,7 +89,7 @@ function App() {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
       setPhase('answered')
     }
-  }, [stop])
+  }, [stop, audioRecorder])
 
   const handlePress = useCallback(() => {
     requestFullscreen()
@@ -70,7 +104,11 @@ function App() {
   if (orientation === 'portrait') return <RotatePrompt reason="orientation" />
 
   const buttonState: ButtonState =
-    phase === 'processing' ? 'processing' : phase === 'recording' ? 'recording' : 'idle'
+    phase === 'processing' || phase === 'transcribing'
+      ? 'processing'
+      : phase === 'recording'
+        ? 'recording'
+        : 'idle'
   const liveQuestion = phase === 'recording' ? transcript : question
 
   return (
@@ -87,6 +125,7 @@ function App() {
               exit={{ opacity: 0, x: -48 }}
               transition={{ duration: 0.25, ease: 'easeOut' }}
             >
+              {phase === 'transcribing' && <p className="idle-placeholder">Transcribing…</p>}
               {phase === 'processing' && <p className="idle-placeholder">Thinking…</p>}
               {phase === 'answered' && !error && <AnswerDisplay answer={answer} />}
               {phase === 'answered' && error && <p className="idle-placeholder">{error}</p>}

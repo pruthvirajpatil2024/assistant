@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
-import { getInterviewAnswer } from '../api/_groq'
+import { getInterviewAnswer, transcribeAudio } from '../api/_groq'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const distDir = path.resolve(__dirname, '../dist')
@@ -22,6 +22,26 @@ app.post('/api/interview', async (req, res) => {
     res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
   }
 })
+
+app.post(
+  '/api/transcribe',
+  express.raw({ type: '*/*', limit: '25mb' }),
+  async (req, res) => {
+    try {
+      const buffer = req.body as Buffer
+      if (!buffer || buffer.length === 0) {
+        res.status(400).json({ error: 'Empty audio' })
+        return
+      }
+      const mimeType = req.headers['content-type'] || 'audio/webm'
+      const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength)
+      const text = await transcribeAudio(arrayBuffer, mimeType)
+      res.json({ text })
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : 'Unknown error' })
+    }
+  },
+)
 
 app.use(express.static(distDir))
 

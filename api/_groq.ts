@@ -43,3 +43,49 @@ export async function getInterviewAnswer(question: string): Promise<string> {
   }
   return answer.trim();
 }
+
+function extensionForMimeType(mimeType: string): string {
+  if (mimeType.includes("webm")) return "webm";
+  if (mimeType.includes("ogg")) return "ogg";
+  if (mimeType.includes("mp4") || mimeType.includes("m4a")) return "m4a";
+  if (mimeType.includes("wav")) return "wav";
+  return "webm";
+}
+
+/** Transcribes a full audio recording with Groq's hosted Whisper model.
+ * Used as the authoritative transcript instead of the live Web Speech API
+ * captions, since Whisper handles weak audio and long recordings without
+ * the browser engine's restart gaps and silence-based word dropping. */
+export async function transcribeAudio(
+  audioData: ArrayBuffer,
+  mimeType: string,
+): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error("GROQ_API_KEY is not set");
+  }
+  const model = process.env.GROQ_STT_MODEL || "whisper-large-v3-turbo";
+
+  const form = new FormData();
+  const ext = extensionForMimeType(mimeType);
+  form.append("file", new Blob([audioData], { type: mimeType }), `audio.${ext}`);
+  form.append("model", model);
+  form.append("response_format", "json");
+
+  const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Groq transcription error ${res.status}: ${text}`);
+  }
+
+  const data = await res.json();
+  if (typeof data?.text !== "string") {
+    throw new Error("Groq transcription API returned an unexpected response shape");
+  }
+  return data.text.trim();
+}
