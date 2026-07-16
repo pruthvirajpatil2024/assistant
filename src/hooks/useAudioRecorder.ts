@@ -31,7 +31,16 @@ export function useAudioRecorder(): UseAudioRecorderResult {
     if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       throw new Error('Audio recording is not supported in this browser')
     }
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    // Boosts weak/quiet speech and suppresses background noise before it
+    // ever reaches Whisper. Most browsers default these on already, but
+    // requesting them explicitly avoids relying on per-device defaults.
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        autoGainControl: true,
+        noiseSuppression: true,
+        echoCancellation: true,
+      },
+    })
     const mimeType = pickMimeType()
     const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
 
